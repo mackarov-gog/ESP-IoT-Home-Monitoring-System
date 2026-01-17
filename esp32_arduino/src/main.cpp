@@ -2,9 +2,8 @@
 #include <WiFi.h>
 #include <WebServer.h>
 #include <PubSubClient.h>
-#include <EEPROM.h>
 #include "ConfigManager.h"
-#include "WebServer.h"  
+#include "MyWebServer.h" 
 #include "sensors.h"
 
 
@@ -18,6 +17,9 @@
 #define TOPIC_LIGHT_CONTROL "home/actuators/light"
 #define TOPIC_AVAILABILITY "home/sensors/availability"
 
+#ifndef LED_BUILTIN
+  #define LED_BUILTIN 2 // Стандартный пин светодиода для большинства ESP32
+#endif
 
 void setupConfigMode();
 void connectWiFi();
@@ -25,7 +27,7 @@ void publishSensorData();
 void checkConnections();
 
 ConfigManager configManager;
-WebServer webServer(&configManager, &sensorManager);
+MyWebServer webServer(&configManager, &sensorManager);
 WiFiClient espClient;
 PubSubClient mqttClient(espClient);
 
@@ -140,11 +142,11 @@ void setupMQTT() {
 
     if (String(topic) == TOPIC_LIGHT_CONTROL) {
       if (message == "ON") {
-        sensorManager.setLightState(true);
+        sensorManager.setRelay(true);
         mqttClient.publish(TOPIC_LIGHT, "1");
         Serial.println("Light turned ON");
       } else if (message == "OFF") {
-        sensorManager.setLightState(false);
+        sensorManager.setRelay(false);
         mqttClient.publish(TOPIC_LIGHT, "0");
         Serial.println("Light turned OFF");
       }
@@ -341,87 +343,45 @@ void connectWiFi() { // Имя должно быть в точности так�
 
 void setup() {
   Serial.begin(115200);
-  EEPROM.begin(512);
   
+  #ifdef LED_BUILTIN
+    pinMode(LED_BUILTIN, OUTPUT);
+  #endif
+
   configManager.loadConfig();
   sensorManager.begin();
 
-  // Логика: если WiFi выключен ИЛИ устройство не настроено
-  if (!configManager.config.wifi_enabled || !configManager.isConfigured()) {
-    configMode = true;
-    setupConfigMode(); // Запуск точки доступа (AP)
+  
+  if (!configManager.isConfigured()) {
+    setupConfigMode();
   } else {
-    configMode = false;
-    connectWiFi();     // Попытка подключения к роутеру
+    connectWiFi();
+    setupMQTT();
   }
   
-  webServer.start();
-  
+  webServer.begin(); 
   Serial.println("Setup completed");
 }
  
 
 void publishSensorData() {
-  sensorManager.publishToMqtt(mqttClient);
+  // Исправлено: передаем имя устройства для формирования топиков
+  sensorManager.publishToMqtt(mqttClient, configManager.config.device_name);
 }
 
 void loop() {
-
   sensorManager.update();
-  
   webServer.handleClient();
   
-
-  
-  
   static unsigned long lastPublish = 0;
-  unsigned long currentMillis = millis();
-  if (!configMode && mqttConnected && (currentMillis - lastPublish > 10000)) {
+  if (!configMode && mqttConnected && (millis() - lastPublish > 10000)) {
     publishSensorData();
-    lastPublish = currentMillis;
+    lastPublish = millis();
   }
-  
   
   checkConnections();
   
   if (mqttConnected) {
     mqttClient.loop();
   }
-  
-  
-  static unsigned long lastBlink = 0;
-  static bool ledState = false;
-  
-  if (currentMillis - lastBlink > 1000) {
-    lastBlink = currentMillis;
-    
-    if (configMode) {
-      if (mqttRetryScheduled) {
-        
-        digitalWrite(LED_BUILTIN, ledState);
-        ledState = !ledState;
-      } else if (wifiRetryScheduled) {
-        
-        digitalWrite(LED_BUILTIN, ledState);
-        ledState = !ledState;
-      } else {
-        
-        digitalWrite(LED_BUILTIN, ledState);
-        ledState = !ledState;
-      }
-    } else if (!wifiConnected) {
-      
-      digitalWrite(LED_BUILTIN, ledState);
-      ledState = !ledState;
-    } else if (!mqttConnected && configManager.isConfigured()) {
-      
-      digitalWrite(LED_BUILTIN, ledState);
-      ledState = !ledState;
-    } else if (wifiConnected && mqttConnected) {
-      
-      digitalWrite(LED_BUILTIN, LOW);
-    }
-  }
-  
-  delay(100);
 }

@@ -1,21 +1,21 @@
-#include "WebServer.h"
+#include "MyWebServer.h"
 
 // Объявляем extern переменные
 extern bool wifiConnected;
 extern bool mqttConnected;
 extern bool configMode;
-extern ConfigManager configManager;
-extern SensorManager sensorManager;  // Добавляем extern для sensorManager
 
-WebServer::WebServer(ConfigManager* cm, SensorManager* sm) : server(80), configManager(cm), sensorManager(sm) {}
 
-void WebServer::start() {
+MyWebServer::MyWebServer(ConfigManager* cm, SensorManager* sm) : server(80), configManager(cm), sensorManager(sm) {}
+
+void MyWebServer::begin() {
   setupRoutes();
   server.begin();
   Serial.println("Web Server started");
 }
 
-void WebServer::setupRoutes() {
+
+void MyWebServer::setupRoutes() {
   // Главная страница - всегда мониторинг данных
   server.on("/", [this]() {
     server.send(200, "text/html", generateMonitorHTML());
@@ -38,35 +38,25 @@ void WebServer::setupRoutes() {
     String mqtt_broker = server.arg("mqtt_broker");
     String mqtt_port_str = server.arg("mqtt_port");
 
-    
-    
     // Clean unwanted characters
-    ssid.replace("�", "");
-    password.replace("�", "");
-    mqtt_broker.replace("�", "");
+    ssid.replace("\r", ""); ssid.replace("\n", "");
+    password.replace("\r", ""); password.replace("\n", "");
+    mqtt_broker.replace("\r", ""); mqtt_broker.replace("\n", "");
+
+
+    // Проверка наличия аргумента чекбокса
+  //configManager->config.wifi_enabled = server.hasArg("wifi_enabled");
+  
+  //configManager->saveConfig();
     
     // Save configuration
-    strncpy(configManager->config.wifi_ssid, 
-            ssid.c_str(), 
-            sizeof(configManager->config.wifi_ssid));
-    
-    strncpy(configManager->config.wifi_password, 
-            password.c_str(), 
-            sizeof(configManager->config.wifi_password));
-    
-    strncpy(configManager->config.mqtt_broker, 
-            mqtt_broker.c_str(), 
-            sizeof(configManager->config.mqtt_broker));
+    strncpy(configManager->config.wifi_ssid, ssid.c_str(), sizeof(configManager->config.wifi_ssid));
+    strncpy(configManager->config.wifi_password, password.c_str(), sizeof(configManager->config.wifi_password));
+    strncpy(configManager->config.mqtt_broker, mqtt_broker.c_str(), sizeof(configManager->config.mqtt_broker));
     
     configManager->config.mqtt_port = mqtt_port_str.toInt();
-    if (configManager->config.mqtt_port <= 0) {
-      configManager->config.mqtt_port = 1883;
-    }
+    if (configManager->config.mqtt_port <= 0) configManager->config.mqtt_port = 1883;
     
-configManager->config.wifi_enabled = server.hasArg("wifi_enabled");
-  configManager->saveConfig();
-
-
     if (configManager->saveConfig()) {
       String successPage = R"raw(
 <!DOCTYPE html><html><head>
@@ -104,13 +94,10 @@ body{font-family:system-ui,-apple-system,sans-serif; margin:20px; background:#f5
   });
 }
 
-String WebServer::generateConfigHTML() {
+String MyWebServer::generateConfigHTML() {
   String cleanSsid = String(configManager->config.wifi_ssid);
-  cleanSsid.replace("�", "");
   String cleanPassword = String(configManager->config.wifi_password);
-  cleanPassword.replace("�", "");
   String cleanBroker = String(configManager->config.mqtt_broker);
-  cleanBroker.replace("�", "");
   
 String html = "<!DOCTYPE html>";
   html += "<html>";
@@ -119,7 +106,7 @@ String html = "<!DOCTYPE html>";
   html += "<meta charset='utf-8'>";
   html += "<meta name='viewport' content='width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no'>";
   
-  html += "<style>";
+   html += "<style>";
   html += "* { box-sizing: border-box; margin: 0; padding: 0; }";
   html += "body { ";
   html += "  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;";
@@ -282,6 +269,8 @@ html += ".save-btn:active { transform: scale(0.98); }";
   html += "}";
   
   html += "</style>";
+  
+  html += "<style>body{font-family:sans-serif;padding:20px;background:#f0f2f5}.container{background:white;padding:20px;border-radius:10px;max-width:500px;margin:auto;box-shadow:0 2px 10px rgba(0,0,0,0.1)}input{width:100%;padding:10px;margin:5px 0;border:1px solid #ddd;border-radius:5px}button{width:100%;padding:10px;background:#007cba;color:white;border:none;border-radius:5px;cursor:pointer;margin-top:10px}.reset-btn{background:#e00}</style>";
   html += "</head>";
   
   html += "<body>";
@@ -289,91 +278,45 @@ html += ".save-btn:active { transform: scale(0.98); }";
   html += "<h1>⚙️ Device Configuration</h1>";
   
   html += "<div class='info'>";
-  html += "Device ID: <span class='device-id'>";
-  html += getDeviceID();
-  html += "</span>";
-  html += "<br>Current Mode: ";
-  html += configMode ? "Configuration AP" : "Station Mode";
+  html += "Device ID: <b>" + getDeviceID() + "</b>";
+  html += "<br>Current Mode: " + String(configMode ? "Configuration AP" : "Station Mode");
   html += "</div>";
   
   html += "<form action='/configure' method='POST' id='configForm'>";
   
-  html += "<div class='form-group'>";
-  html += "<label for='ssid'>📶 WiFi SSID</label>";
-  html += "<input type='text' id='ssid' name='ssid' value='";
-  html += cleanSsid;
-  html += "' placeholder='Enter your WiFi network name' required>";
-  html += "</div>";
+  html += "<label>📶 WiFi SSID</label>";
+  html += "<input type='text' name='ssid' value='" + cleanSsid + "' required>";
   
-  html += "<div class='form-group'>";
-  html += "<label for='password'>🔑 WiFi Password</label>";
-  html += "<input type='password' id='password' name='password' value='";
-  html += cleanPassword;
-  html += "' placeholder='Enter your WiFi password'>";
-  html += "</div>";
+  html += "<label>🔑 WiFi Password</label>";
+  html += "<input type='password' name='password' value='" + cleanPassword + "'>";
   
-  html += "<div class='form-group'>";
-  html += "<label for='mqtt_broker'>📡 MQTT Broker</label>";
-  html += "<input type='text' id='mqtt_broker' name='mqtt_broker' value='";
-  html += cleanBroker;
-  html += "' placeholder='e.g., 192.168.1.100 or mqtt.server.com' required>";
-  html += "</div>";
+  html += "<label>📡 MQTT Broker</label>";
+  html += "<input type='text' name='mqtt_broker' value='" + cleanBroker + "' required>";
   
-  html += "<div class='form-group'>";
-  html += "<label for='mqtt_port'>🔢 MQTT Port</label>";
-  html += "<input type='number' id='mqtt_port' name='mqtt_port' value='";
-  html += String(configManager->config.mqtt_port);
-  html += "' placeholder='1883' min='1' max='65535'>";
-  html += "</div>";
+  html += "<label>🔢 MQTT Port</label>";
+  html += "<input type='number' name='mqtt_port' value='" + String(configManager->config.mqtt_port) + "'>";
 
-  html += "<div class='form-group'>";
-html += "  <label> 📡 Сетевой режим (WiFi + MQTT)</label>";
-html += "<div class='switch-container'>";
-html += "  <label class='switch'>";
-String isChecked = configManager->config.wifi_enabled ? "checked" : "";
-html += "    <input type='checkbox' name='wifi_enabled' " + isChecked + ">";
-html += "    <span class='slider'></span>";
-html += "  </label>";
-html += "</div>";
-html += "</div>";
-  
-  html += "<div class='btn-group'>";
-  html += "<button type='submit' class='save-btn'>💾 Save Settings</button>";
-  html += "<button type='button' class='clear-btn' onclick='clearAllFields()'>🧹 Clear All Fields</button>";
-  html += "<button type='button' class='reset-btn' onclick='resetConfiguration()'>🔄 Reset to Factory</button>";
-  html += "<a href='/' class='btn monitor-btn'>📊 View Sensor Data</a>";
-  html += "</div>";
-  
+ html += "<div class='input-group'>";
+ html += "    <label for='wifi_enabled'>Enable Wi-Fi Connection</label>";
+ html += "    <input type='checkbox' id='wifi_enabled' name='wifi_enabled' ${configManager->config.wifi_enabled ? 'checked' : ''}>";
+ html += "</div>";
+
+  html += "<button type='submit'>💾 Save Settings</button>";
   html += "</form>";
-  html += "</div>";
   
-  html += "<script>";
-  html += "function clearAllFields() {";
-  html += "  if (confirm('Are you sure you want to clear all fields?')) {";
-  html += "    const form = document.getElementById('configForm');";
-  html += "    const inputs = form.querySelectorAll('input[type=\"text\"], input[type=\"password\"], input[type=\"number\"]');";
-  html += "    inputs.forEach(input => {";
-  html += "      input.value = '';";
-  html += "      input.style.backgroundColor = '#fff3cd';";
-  html += "      setTimeout(() => { input.style.backgroundColor = ''; }, 1000);";
-  html += "    });";
-  html += "  }";
-  html += "}";
+  html += "<form action='/reset' style='margin-top:20px' onsubmit='return confirm(\"Reset all settings?\")'>";
+  html += "<button class='reset-btn'>🔄 Reset to Factory</button>";
+  html += "</form>";
   
-  html += "function resetConfiguration() {";
-  html += "  if (confirm('⚠️ WARNING! This will reset all settings to factory defaults and reboot the device. Continue?')) {";
-  html += "    window.location.href = '/reset';";
-  html += "  }";
-  html += "}";
-  html += "</script>";
-  html += "</body>";
-  html += "</html>";
+  html += "<div style='text-align:center;margin-top:20px'><a href='/' style='text-decoration:none;color:#007cba'>📊 View Sensor Data</a></div>";
+  
+  html += "</div></body></html>";
   
   return html;
 }
 
-String WebServer::generateMonitorHTML() {
-  // Убрана неиспользуемая переменная sensorData
+String MyWebServer::generateMonitorHTML() {
+  // ИСПРАВЛЕНИЕ: В JavaScript изменены имена полей (temp, hum, relay), чтобы они совпадали с sensors.cpp
   String html = R"raw(
 <!DOCTYPE html>
 <html>
@@ -506,7 +449,7 @@ String WebServer::generateMonitorHTML() {
         </div>
         
         <div class="sensors-grid" id="sensors-grid">
-            <!-- Данные будут обновляться JavaScript -->
+            <div class="sensor-card normal">Loading data...</div>
         </div>
         
         <div class="controls">
@@ -520,28 +463,27 @@ String WebServer::generateMonitorHTML() {
             fetch('/api/status')
                 .then(response => response.json())
                 .then(data => {
+                    // console.log(data); // Для отладки
                     const grid = document.getElementById('sensors-grid');
                     grid.innerHTML = `
-                        <div class="sensor-card ${data.temperature > 30 ? 'alert' : 'normal'}">
+                        <div class="sensor-card ${data.temp > 30 ? 'alert' : 'normal'}">
                             <h3>🌡️ Temperature</h3>
-                            <div class="sensor-value">${data.temperature.toFixed(1)}<span class="sensor-unit">°C</span></div>
-                            ${data.temperature > 30 ? '<div style="color: #f44336;">High Temperature!</div>' : ''}
+                            <div class="sensor-value">${data.temp ? data.temp.toFixed(1) : '--'}<span class="sensor-unit">°C</span></div>
+                            ${data.temp > 30 ? '<div style="color: #f44336;">High Temperature!</div>' : ''}
                         </div>
-                        <div class="sensor-card ${data.humidity > 80 || data.humidity < 30 ? 'warning' : 'normal'}">
+                        <div class="sensor-card ${data.hum > 80 || data.hum < 30 ? 'warning' : 'normal'}">
                             <h3>💧 Humidity</h3>
-                            <div class="sensor-value">${data.humidity.toFixed(1)}<span class="sensor-unit">%</span></div>
-                            ${data.humidity > 80 ? '<div style="color: #ff9800;">High Humidity!</div>' : 
-                              data.humidity < 30 ? '<div style="color: #ff9800;">Low Humidity!</div>' : ''}
+                            <div class="sensor-value">${data.hum ? data.hum.toFixed(1) : '--'}<span class="sensor-unit">%</span></div>
+                            ${data.hum > 80 ? '<div style="color: #ff9800;">High Humidity!</div>' : ''}
                         </div>
                         <div class="sensor-card ${data.gas > 300 ? 'alert' : data.gas > 200 ? 'warning' : 'normal'}">
                             <h3>⚠️ Gas Level</h3>
-                            <div class="sensor-value">${data.gas}<span class="sensor-unit">ppm</span></div>
-                            ${data.gas > 300 ? '<div style="color: #f44336;">DANGER!</div>' : 
-                              data.gas > 200 ? '<div style="color: #ff9800;">High Level!</div>' : ''}
+                            <div class="sensor-value">${data.gas}</div>
+                            ${data.gas > 300 ? '<div style="color: #f44336;">DANGER!</div>' : ''}
                         </div>
-                        <div class="sensor-card ${data.light ? 'normal' : 'warning'}">
+                        <div class="sensor-card ${data.relay ? 'normal' : 'warning'}">
                             <h3>💡 Light</h3>
-                            <div class="sensor-value">${data.light ? 'ON' : 'OFF'}</div>
+                            <div class="sensor-value">${data.relay ? 'ON' : 'OFF'}</div>
                         </div>
                         <div class="sensor-card ${data.leak ? 'alert' : 'normal'}">
                             <h3>💦 Water Leak</h3>
@@ -554,7 +496,10 @@ String WebServer::generateMonitorHTML() {
                         </div>
                     `;
                 })
-                .catch(error => console.error('Error:', error));
+                .catch(error => {
+                    console.error('Error:', error);
+                    // document.getElementById('sensors-grid').innerHTML = 'Error loading data';
+                });
         }
 
         // Обновляем данные каждые 2 секунды
@@ -569,26 +514,30 @@ String WebServer::generateMonitorHTML() {
   return html;
 }
 
-String WebServer::generateStatusJSON() {
+String MyWebServer::generateStatusJSON() {
   String json = "{";
+  
+  // ИСПРАВЛЕНИЕ: Добавляем данные с сенсоров в JSON!
   sensorManager->appendToJson(json); 
   
-  json += "\"wifi\":" + String(WiFi.status() == WL_CONNECTED ? "true" : "false") + ",";
+  // Добавляем запятую перед wifi, так как appendToJson не ставит запятую в конце, но добавляет поля
+  json += ",\"wifi\":" + String(WiFi.status() == WL_CONNECTED ? "true" : "false") + ",";
   json += "\"mqtt\":" + String(mqttConnected ? "true" : "false"); 
   
   json += "}";
   return json;
 }
 
-void WebServer::stop() {
+
+void MyWebServer::stop() {
   server.stop();
 }
 
-void WebServer::handleClient() {
+void MyWebServer::handleClient() {
   server.handleClient();
 }
 
-String WebServer::getDeviceID() {
+String MyWebServer::getDeviceID() {
   uint32_t chipId = (uint32_t)ESP.getEfuseMac(); 
   return String(chipId, HEX);
 }

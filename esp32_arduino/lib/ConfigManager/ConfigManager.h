@@ -11,7 +11,8 @@ struct DeviceConfig {
   char mqtt_broker[64];
   int mqtt_port;
   char device_name[32];
-  bool configured;
+  bool configured;    // Проверьте наличие этой строки
+  bool wifi_enabled;  // Проверьте наличие этой строки
 };
 
 class ConfigManager {
